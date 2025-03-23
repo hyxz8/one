@@ -31,6 +31,8 @@ app.use('/', (req, res, next) => {
         'x-forwarded-for',
         'x-real-ip',
         'cf-connecting-ip',
+        'cf-ipcountry',
+        'cf-worker',
         'true-client-ip',
         'forwarded',
         'via',
