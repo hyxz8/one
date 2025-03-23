@@ -24,7 +24,12 @@ const apiProxy = createProxyMiddleware({
   changeOrigin: true, // 修改请求头中的 Origin 为目标域名
   router: async (req) => {
     // 从 URL 中提取目标域名
-    const target = req.url.split('/')[1]; // 获取第一个斜杠后的内容作为目标域名
+    const urlParts = req.url ? req.url.split('/') : [];  // 增加判空保护
+    const target = urlParts.length > 1 ? urlParts[1] : null; // 获取第一个斜杠后的内容作为目标域名
+    if (!target) {
+      // 如果没有目标域名，则拒绝代理
+      return null;
+    }
     // 协议校验
     const useHttps = await checkHttps(target);
     const protocol = useHttps ? 'https' : 'http';
@@ -36,7 +41,11 @@ const apiProxy = createProxyMiddleware({
     };
   },
   pathRewrite: (path, req) => {
-    const target = req.url.split('/')[1];
+    const urlParts = req.url ? req.url.split('/') : []; // 增加判空保护
+    const target = urlParts.length > 1 ? urlParts[1] : null;
+    if (!target) {
+      return path; // 如果没有目标域名，则不修改路径
+    }
     const newPath = path.replace(`/${target}`, '');
     return newPath;
   },
@@ -81,7 +90,6 @@ const apiProxy = createProxyMiddleware({
     res.status(500).send('Proxy error occurred.');
   },
 });
-// 使用反向代理中间件, 拦截所有请求
 app.use('/', apiProxy);
 // 启动服务器
 const PORT = process.env.PORT || 3000;
