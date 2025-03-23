@@ -1,118 +1,75 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const https = require('https'); // 引入 https 模块
+const url = require('url');
 
 const app = express();
 
-// 协议校验函数 (示例，实际应用中可能需要更完善的实现)
-async function checkHttps(domain) {
-  return new Promise((resolve) => {
-    const req = https.request({
-      host: domain,
-      port: 443,
-      method: 'HEAD',
-    }, (res) => {
-      resolve(true); // 支持 HTTPS
-      req.destroy();
-    }).on('error', (err) => {
-      resolve(false); // 不支持 HTTPS
-      req.destroy();
-    });
+// 中间件处理动态代理
+app.use('/', (req, res, next) => {
+  // 获取请求路径，去除开头的斜杠
+  const path = req.url.substring(1);
+  
+  // 检查路径是否是有效的URL
+  if (!path.startsWith('http://') && !path.startsWith('https://')) {
+    return res.status(400).send('Invalid URL. Please use format: /https://api.example.com/path');
+  }
 
-    req.end();
+  // 解析目标URL
+  const targetUrl = path;
+  const parsedUrl = url.parse(targetUrl);
+  
+  // 创建动态代理
+  const apiProxy = createProxyMiddleware({
+    target: `${parsedUrl.protocol}//${parsedUrl.host}`,
+    changeOrigin: true,
+    pathRewrite: {
+      [`^/${targetUrl.split('/').slice(0, 3).join('/')}`]: '', // 重写路径，移除目标域名部分
+    },
+    onProxyReq: (proxyReq, req, res) => {
+      // 移除所有隐私相关的请求头
+      const privacyHeaders = [
+        'x-forwarded-for',
+        'x-real-ip',
+        'cf-connecting-ip',
+        'true-client-ip',
+        'forwarded',
+        'via',
+        'x-cluster-client-ip',
+        'x-forwarded-host',
+        'x-forwarded-proto',
+        'x-originating-ip',
+        'x-remote-ip',
+        'x-remote-addr',
+        'x-envoy-external-address',
+        'x-amzn-trace-id',
+        'x-request-id',
+        'x-correlation-id',
+      ];
+      privacyHeaders.forEach((header) => proxyReq.removeHeader(header));
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      // 移除所有隐私相关的响应头
+      const privacyHeaders = [
+        'x-powered-by',
+        'server',
+        'x-request-id',
+        'x-correlation-id',
+        'x-amzn-trace-id',
+        'via',
+        'cf-ray',
+        'x-envoy-upstream-service-time',
+      ];
+      privacyHeaders.forEach((header) => delete proxyRes.headers[header]);
+    },
   });
-}
 
-// 动态设置反向代理
-const apiProxy = createProxyMiddleware({
-  changeOrigin: true, // 修改请求头中的 Origin 为目标域名
-  router: async (req) => {
-    // 从 URL 中提取目标域名
-    const urlParts = req.url ? req.url.split('/') : [];  // 增加判空保护
-    const target = urlParts.length > 1 ? urlParts[1] : null; // 获取第一个斜杠后的内容作为目标域名
-
-    if (!target) {
-      // 如果没有目标域名，返回一个错误信息
-      return {
-        target: 'http://error.example.com', // 设置一个无效的URL, 避免程序崩溃
-        headers: {
-          host: 'error.example.com',
-        },
-      };
-    }
-
-    // 协议校验
-    const useHttps = await checkHttps(target);
-    const protocol = useHttps ? 'https' : 'http';
-
-    return {
-      target: `${protocol}://${target}`, // 目标域名
-      headers: {
-        host: target,
-      },
-    };
-  },
-  pathRewrite: (path, req) => {
-    const urlParts = req.url ? req.url.split('/') : []; // 增加判空保护
-    const target = urlParts.length > 1 ? urlParts[1] : null;
-    if (!target) {
-      return path; // 如果没有目标域名，则不修改路径
-    }
-    const newPath = path.replace(`/${target}`, '');
-    return newPath;
-  },
-  onProxyReq: (proxyReq, req, res) => {
-    // 移除所有隐私相关的请求头
-    const privacyHeaders = [
-      'x-forwarded-for', // 客户端 IP
-      'x-real-ip', // 客户端真实 IP
-      'cf-connecting-ip', // Cloudflare 客户端 IP
-      'true-client-ip', // 客户端真实 IP
-      'forwarded', // 代理链信息
-      'via', // 代理链信息
-      'x-cluster-client-ip', // 集群客户端 IP
-      'x-forwarded-host', // 原始主机信息
-      'x-forwarded-proto', // 原始协议信息
-      'x-originating-ip', // 原始 IP
-      'x-remote-ip', // 远程 IP
-      'x-remote-addr', // 远程地址
-      'x-envoy-external-address', // Envoy 外部地址
-      'x-amzn-trace-id', // AWS 跟踪 ID
-      'x-request-id', // 请求 ID
-      'x-correlation-id', // 关联 ID
-    ];
-    privacyHeaders.forEach((header) => proxyReq.removeHeader(header));
-  },
-  onProxyRes: (proxyRes, req, res) => {
-    // 移除所有隐私相关的响应头
-    const privacyHeaders = [
-      'x-powered-by', // 服务器技术信息
-      'server', // 服务器信息
-      'x-request-id', // 请求 ID
-      'x-correlation-id', // 关联 ID
-      'x-amzn-trace-id', // AWS 跟踪 ID
-      'via', // 代理链信息
-      'cf-ray', // Cloudflare 信息
-      'x-envoy-upstream-service-time', // Envoy 上游服务时间
-    ];
-    privacyHeaders.forEach((header) => delete proxyRes.headers[header]);
-  },
-  onError: (err, req, res) => { // 错误处理
-    console.error('Proxy error:', err);
-    if (res) {
-        res.status(500).send('Proxy error occurred.');
-    } else {
-      console.error('Response object is not available.');
-    }
-
-  },
+  // 应用代理到当前请求
+  return apiProxy(req, res, next);
 });
-
-// 使用反向代理中间件, 拦截所有请求
-app.use('/', apiProxy);
 
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(`Example usage: http://localhost:${PORT}/https://api.x.ai/path`);
 });
