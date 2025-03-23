@@ -1,7 +1,9 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const https = require('https'); // 引入 https 模块
+
 const app = express();
+
 // 协议校验函数 (示例，实际应用中可能需要更完善的实现)
 async function checkHttps(domain) {
   return new Promise((resolve) => {
@@ -16,9 +18,11 @@ async function checkHttps(domain) {
       resolve(false); // 不支持 HTTPS
       req.destroy();
     });
+
     req.end();
   });
 }
+
 // 动态设置反向代理
 const apiProxy = createProxyMiddleware({
   changeOrigin: true, // 修改请求头中的 Origin 为目标域名
@@ -26,13 +30,21 @@ const apiProxy = createProxyMiddleware({
     // 从 URL 中提取目标域名
     const urlParts = req.url ? req.url.split('/') : [];  // 增加判空保护
     const target = urlParts.length > 1 ? urlParts[1] : null; // 获取第一个斜杠后的内容作为目标域名
+
     if (!target) {
-      // 如果没有目标域名，则拒绝代理
-      return null;
+      // 如果没有目标域名，返回一个错误信息
+      return {
+        target: 'http://error.example.com', // 设置一个无效的URL, 避免程序崩溃
+        headers: {
+          host: 'error.example.com',
+        },
+      };
     }
+
     // 协议校验
     const useHttps = await checkHttps(target);
     const protocol = useHttps ? 'https' : 'http';
+
     return {
       target: `${protocol}://${target}`, // 目标域名
       headers: {
@@ -87,10 +99,18 @@ const apiProxy = createProxyMiddleware({
   },
   onError: (err, req, res) => { // 错误处理
     console.error('Proxy error:', err);
-    res.status(500).send('Proxy error occurred.');
+    if (res) {
+        res.status(500).send('Proxy error occurred.');
+    } else {
+      console.error('Response object is not available.');
+    }
+
   },
 });
+
+// 使用反向代理中间件, 拦截所有请求
 app.use('/', apiProxy);
+
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
