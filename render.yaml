@@ -1,0 +1,23 @@
+#################################################################
+# Example render.yaml                                           #
+# Do not use this file directly! Consult it for reference only. #
+#################################################################
+
+previews:
+  generation: automatic # Enable preview environments
+
+# List all services *except* PostgreSQL databases here
+services:
+  # A web service on the Ruby native runtime
+  - type: web     # 类型 
+    runtime: node # 语言
+    name: api-dl  # 名字
+    repo: https://github.com/hyxz8/one # 仓库地址
+    numInstances: 1   # 1实例
+    region: singapore # 新加披地区
+    plan: free    # 免费版
+    branch: main      # 仓库分支
+    buildCommand: yarn install
+    startCommand: node app.jsv
+    autoDeploy: true # Disable automatic deploys
+    maxShutdownDelaySeconds: 120
