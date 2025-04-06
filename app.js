@@ -70,7 +70,7 @@ app.use('/', (req, res, next) => {
 });
 
 // 启动服务器
-const PORT = process.env.PORT || 6068;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`不许进来看啦`);
   console.log(`闲人免进啊，兄弟！`);
